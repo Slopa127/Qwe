@@ -1,18 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>Simple FPS Step 2: Shooting</title>
+  <title>FPS with Click to Start</title>
   <style>
     body { margin: 0; overflow: hidden; background: #222; color: white; font-family: monospace; }
-    #info {
-      position: absolute; top: 10px; left: 10px; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 5px;
-      user-select: none;
-      z-index: 100;
+    #startButton {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 40px;
+      font-size: 24px;
+      background: #007bff;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      z-index: 1000;
     }
   </style>
 </head>
 <body>
-<div id="info">Click to lock pointer. WASD to move. Left click to shoot.</div>
+<button id="startButton">Click to Start</button>
 <script type="module">
   import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
   import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/PointerLockControls.js';
@@ -22,8 +30,11 @@
   let velocity = new THREE.Vector3();
   let direction = new THREE.Vector3();
 
-  const bullets = [];
-  const targets = [];
+  const startButton = document.getElementById('startButton');
+
+  startButton.addEventListener('click', () => {
+    controls.lock();
+  });
 
   init();
   animate();
@@ -39,8 +50,13 @@
     document.body.appendChild(renderer.domElement);
 
     controls = new PointerLockControls(camera, document.body);
-    document.body.addEventListener('click', () => {
-      controls.lock();
+
+    controls.addEventListener('lock', () => {
+      startButton.style.display = 'none';
+    });
+
+    controls.addEventListener('unlock', () => {
+      startButton.style.display = 'block';
     });
 
     scene.add(controls.getObject());
@@ -52,21 +68,17 @@
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // Create multiple targets
-    for(let i = 0; i < 3; i++) {
-      const targetGeometry = new THREE.BoxGeometry(1, 2, 1);
-      const targetMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-      const target = new THREE.Mesh(targetGeometry, targetMaterial);
-      target.position.set((i - 1) * 5, 1, -15); // Spread targets in front
-      scene.add(target);
-      targets.push({ mesh: target, health: 3 });
-    }
+    // Target cube
+    const targetGeometry = new THREE.BoxGeometry(1, 2, 1);
+    const targetMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const target = new THREE.Mesh(targetGeometry, targetMaterial);
+    target.position.set(0, 1, -10);
+    scene.add(target);
 
     window.addEventListener('resize', onWindowResize);
 
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
-    document.addEventListener('mousedown', shoot);
   }
 
   function onWindowResize() {
@@ -117,30 +129,6 @@
     }
   }
 
-  function shoot(event) {
-    if (!controls.isLocked) return;
-    if (event.button !== 0) return; // Left click only
-
-    const bulletGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-    const bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-    const bullet = new THREE.Mesh(bulletGeometry, bulletMaterial);
-
-    // Start position: camera position
-    bullet.position.copy(controls.getObject().position);
-
-    // Direction: camera forward
-    const direction = new THREE.Vector3();
-    camera.getWorldDirection(direction);
-
-    bullet.userData = {
-      velocity: direction.multiplyScalar(1),
-      aliveTime: 0
-    };
-
-    scene.add(bullet);
-    bullets.push(bullet);
-  }
-
   function animate() {
     requestAnimationFrame(animate);
 
@@ -156,34 +144,6 @@
 
       direction.copy(velocity).applyEuler(camera.rotation);
       controls.getObject().position.add(direction);
-
-      // Update bullets
-      for (let i = bullets.length - 1; i >= 0; i--) {
-        const b = bullets[i];
-        b.position.add(b.userData.velocity);
-
-        b.userData.aliveTime += 1;
-        if (b.userData.aliveTime > 200) {
-          scene.remove(b);
-          bullets.splice(i, 1);
-          continue;
-        }
-
-        // Check collision with targets (simple distance)
-        for (let j = targets.length - 1; j >= 0; j--) {
-          const t = targets[j];
-          if (t.mesh.position.distanceTo(b.position) < 1) {
-            t.health--;
-            if (t.health <= 0) {
-              scene.remove(t.mesh);
-              targets.splice(j, 1);
-            }
-            scene.remove(b);
-            bullets.splice(i, 1);
-            break;
-          }
-        }
-      }
     }
 
     renderer.render(scene, camera);
