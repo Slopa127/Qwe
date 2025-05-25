@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>FPS with Click to Start</title>
+  <meta charset="UTF-8" />
+  <title>Simple FPS Shooter</title>
   <style>
     body { margin: 0; overflow: hidden; background: #222; color: white; font-family: monospace; }
     #startButton {
       position: absolute;
-      top: 50%;
-      left: 50%;
+      top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       padding: 20px 40px;
       font-size: 24px;
@@ -17,137 +17,121 @@
       cursor: pointer;
       z-index: 1000;
     }
+    #hud {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(0,0,0,0.5); padding: 10px;
+      border-radius: 5px; font-size: 18px; user-select: none;
+      z-index: 1000;
+    }
+    #gameOver {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 48px; color: red;
+      display: none;
+      z-index: 1001;
+      user-select: none;
+    }
   </style>
 </head>
 <body>
-<button id="startButton">Click to Start</button>
+  <button id="startButton">Click to Start</button>
+  <div id="hud">Health: 100</div>
+  <div id="gameOver">GAME OVER<br><button id="restartButton">Restart</button></div>
+
 <script type="module">
-  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
-  import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/PointerLockControls.js';
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.module.js';
+import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.154.0/examples/jsm/controls/PointerLockControls.js';
 
-  let camera, scene, renderer, controls;
-  let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
-  let velocity = new THREE.Vector3();
-  let direction = new THREE.Vector3();
+const startButton = document.getElementById('startButton');
+const hud = document.getElementById('hud');
+const gameOverDiv = document.getElementById('gameOver');
+const restartButton = document.getElementById('restartButton');
 
-  const startButton = document.getElementById('startButton');
+let camera, scene, renderer, controls;
+let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+let velocity = new THREE.Vector3();
+let direction = new THREE.Vector3();
 
-  startButton.addEventListener('click', () => {
-    controls.lock();
+let bullets = [];
+let enemyBullets = [];
+let targets = [];
+let walls = [];
+
+let playerHealth = 100;
+let canShoot = true;
+
+const bulletSpeed = 1.5;
+const enemyShootInterval = 2000; // ms
+
+init();
+animate();
+
+startButton.addEventListener('click', () => {
+  controls.lock();
+});
+
+restartButton.addEventListener('click', () => {
+  location.reload();
+});
+
+function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x222222);
+
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  controls = new PointerLockControls(camera, document.body);
+
+  controls.addEventListener('lock', () => {
+    startButton.style.display = 'none';
+    hud.style.display = 'block';
   });
 
-  init();
-  animate();
+  controls.addEventListener('unlock', () => {
+    startButton.style.display = 'block';
+    hud.style.display = 'none';
+  });
 
-  function init() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
+  scene.add(controls.getObject());
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  // Floor
+  const floorGeometry = new THREE.PlaneGeometry(100, 100);
+  const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, side: THREE.DoubleSide });
+  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
+  // Walls (big boxes that block movement and bullets)
+  createWall(-10, 1, -20, 20, 2, 1);  // Wall 1
+  createWall(10, 1, -10, 1, 2, 20);   // Wall 2
+  createWall(0, 1, -5, 10, 2, 1);     // Wall 3
 
-    controls = new PointerLockControls(camera, document.body);
-
-    controls.addEventListener('lock', () => {
-      startButton.style.display = 'none';
-    });
-
-    controls.addEventListener('unlock', () => {
-      startButton.style.display = 'block';
-    });
-
-    scene.add(controls.getObject());
-
-    // Floor
-    const floorGeometry = new THREE.PlaneGeometry(100, 100);
-    const floorMaterial = new THREE.MeshBasicMaterial({ color: 0x444444, side: THREE.DoubleSide });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
-
-    // Target cube
-    const targetGeometry = new THREE.BoxGeometry(1, 2, 1);
-    const targetMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const target = new THREE.Mesh(targetGeometry, targetMaterial);
-    target.position.set(0, 1, -10);
-    scene.add(target);
-
-    window.addEventListener('resize', onWindowResize);
-
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
+  // Targets (enemies)
+  for(let i = 0; i < 3; i++) {
+    const posX = (i - 1) * 8;
+    const posZ = -20;
+    createTarget(posX, 1, posZ);
   }
 
-  function onWindowResize() {
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
+  window.addEventListener('resize', onWindowResize);
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', onKeyUp);
+  document.addEventListener('mousedown', shoot);
+}
 
-  function onKeyDown(event) {
-    switch(event.code) {
-      case 'ArrowUp':
-      case 'KeyW':
-        moveForward = true;
-        break;
-      case 'ArrowLeft':
-      case 'KeyA':
-        moveLeft = true;
-        break;
-      case 'ArrowDown':
-      case 'KeyS':
-        moveBackward = true;
-        break;
-      case 'ArrowRight':
-      case 'KeyD':
-        moveRight = true;
-        break;
-    }
-  }
+function createWall(x,y,z, sx, sy, sz) {
+  const geo = new THREE.BoxGeometry(sx, sy, sz);
+  const mat = new THREE.MeshBasicMaterial({ color: 0x555555 });
+  const wall = new THREE.Mesh(geo, mat);
+  wall.position.set(x,y,z);
+  scene.add(wall);
+  walls.push(wall);
+}
 
-  function onKeyUp(event) {
-    switch(event.code) {
-      case 'ArrowUp':
-      case 'KeyW':
-        moveForward = false;
-        break;
-      case 'ArrowLeft':
-      case 'KeyA':
-        moveLeft = false;
-        break;
-      case 'ArrowDown':
-      case 'KeyS':
-        moveBackward = false;
-        break;
-      case 'ArrowRight':
-      case 'KeyD':
-        moveRight = false;
-        break;
-    }
-  }
-
-  function animate() {
-    requestAnimationFrame(animate);
-
-    if (controls.isLocked === true) {
-      const speed = 0.1;
-      velocity.x = 0;
-      velocity.z = 0;
-
-      if (moveForward) velocity.z -= speed;
-      if (moveBackward) velocity.z += speed;
-      if (moveLeft) velocity.x -= speed;
-      if (moveRight) velocity.x += speed;
-
-      direction.copy(velocity).applyEuler(camera.rotation);
-      controls.getObject().position.add(direction);
-    }
-
-    renderer.render(scene, camera);
-  }
-</script>
-</body>
-</html>
+function createTarget(x,y,z) {
+  const geo = new THREE.BoxGeometry(1, 2, 1);
+  const mat = new THREE.MeshBasicMat
