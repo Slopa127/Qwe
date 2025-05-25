@@ -1,337 +1,35 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <title>Simple FPS</title>
-  <style>
-    body { margin: 0; overflow: hidden; }
-    canvas { display: block; }
-    #info {
-      position: absolute; top: 10px; left: 10px;
-      color: white; font-family: monospace; background: rgba(0,0,0,0.5);
-      padding: 10px; border-radius: 5px;
-    }
-  </style>
+  <title>Step 1: Spinning Cube</title>
+  <style>body { margin: 0; overflow: hidden; }</style>
 </head>
 <body>
-<div id="info">Use WASD or arrow keys to move, click to shoot</div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/controls/PointerLockControls.js"></script>
 <script>
-  let scene, camera, renderer, controls;
-  let objects = []; // walls and targets for collision
-  let bullets = [];
-  let targets = [];
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x888888);
 
-  init();
-  animate();
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+  camera.position.z = 5;
 
-  function init() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
+  const renderer = new THREE.WebGLRenderer();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-
-    renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.body.appendChild(renderer.domElement);
-
-    // PointerLockControls for FPS mouse look
-    controls = new THREE.PointerLockControls(camera, document.body);
-
-    document.body.addEventListener('click', () => {
-      controls.lock();
-    });
-
-    scene.add(controls.getObject());
-
-    // Floor
-    const floorGeometry = new THREE.PlaneGeometry(100, 100);
-    const floorMaterial = new THREE.MeshBasicMaterial({color: 0x444444});
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-    floor.rotation.x = - Math.PI / 2;
-    scene.add(floor);
-
-    // Walls (simple boxes)
-    createWall(0, 2, -20, 40, 4, 1);
-    createWall(-20, 2, 0, 1, 4, 40);
-    createWall(20, 2, 0, 1, 4, 40);
-    createWall(0, 2, 20, 40, 4, 1);
-
-    // Create some targets (boxes with guns)
-    createTarget(0, 1, -10);
-    createTarget(-10, 1, 10);
-    createTarget(10, 1, 10);
-
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    dirLight.position.set(5,10,7.5);
-    scene.add(dirLight);
-
-    // Controls movement flags
-    moveForward = false;
-    moveBackward = false;
-    moveLeft = false;
-    moveRight = false;
-    velocity = new THREE.Vector3();
-
-    // Keyboard listeners
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
-
-    // Mouse click to shoot
-    document.addEventListener('mousedown', shoot);
-
-    window.addEventListener('resize', onWindowResize);
-  }
-
-  function createWall(x,y,z,w,h,d) {
-    const geometry = new THREE.BoxGeometry(w,h,d);
-    const material = new THREE.MeshBasicMaterial({color:0x888888});
-    const wall = new THREE.Mesh(geometry, material);
-    wall.position.set(x,y,z);
-    scene.add(wall);
-    objects.push(wall);
-  }
-
-  function createTarget(x,y,z) {
-    const geometry = new THREE.BoxGeometry(1,2,1);
-    const material = new THREE.MeshBasicMaterial({color:0xff0000});
-    const target = new THREE.Mesh(geometry, material);
-    target.position.set(x,y,z);
-    scene.add(target);
-    targets.push({
-      mesh: target,
-      health: 3,
-      shootCooldown: 0,
-      gunPosition: new THREE.Vector3(x, y+1, z)
-    });
-    objects.push(target);
-  }
-
-  function shoot() {
-    if (!controls.isLocked) return;
-
-    // Create bullet as a small sphere
-    const geometry = new THREE.SphereGeometry(0.05, 8, 8);
-    const material = new THREE.MeshBasicMaterial({color: 0xffff00});
-    const bullet = new THREE.Mesh(geometry, material);
-
-    // Position bullet at camera
-    const pos = controls.getObject().position.clone();
-    bullet.position.copy(pos);
-
-    // Set velocity vector forward from camera
-    const direction = new THREE.Vector3();
-    camera.getWorldDirection(direction);
-
-    bullet.userData = {
-      velocity: direction.multiplyScalar(1),
-      owner: 'player'
-    };
-
-    scene.add(bullet);
-    bullets.push(bullet);
-  }
-
-  // Movement flags
-  let moveForward, moveBackward, moveLeft, moveRight;
-  let velocity;
-
-  const speed = 0.1;
-
-  function onKeyDown(event) {
-    switch(event.code) {
-      case 'ArrowUp':
-      case 'KeyW': moveForward = true; break;
-      case 'ArrowLeft':
-      case 'KeyA': moveLeft = true; break;
-      case 'ArrowDown':
-      case 'KeyS': moveBackward = true; break;
-      case 'ArrowRight':
-      case 'KeyD': moveRight = true; break;
-    }
-  }
-
-  function onKeyUp(event) {
-    switch(event.code) {
-      case 'ArrowUp':
-      case 'KeyW': moveForward = false; break;
-      case 'ArrowLeft':
-      case 'KeyA': moveLeft = false; break;
-      case 'ArrowDown':
-      case 'KeyS': moveBackward = false; break;
-      case 'ArrowRight':
-      case 'KeyD': moveRight = false; break;
-    }
-  }
-
-  // Simple raycaster for collisions & line of sight
-  const raycaster = new THREE.Raycaster();
-
-  // Player health
-  let playerHealth = 10;
+  const geometry = new THREE.BoxGeometry();
+  const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+  const cube = new THREE.Mesh(geometry, material);
+  scene.add(cube);
 
   function animate() {
     requestAnimationFrame(animate);
-
-    if (controls.isLocked) {
-      // Movement vector
-      velocity.set(0,0,0);
-      if (moveForward) velocity.z -= speed;
-      if (moveBackward) velocity.z += speed;
-      if (moveLeft) velocity.x -= speed;
-      if (moveRight) velocity.x += speed;
-
-      // Calculate movement relative to camera direction
-      let moveVector = new THREE.Vector3();
-      controls.getDirection(moveVector);
-      moveVector.y = 0;
-      moveVector.normalize();
-
-      let rightVector = new THREE.Vector3();
-      rightVector.crossVectors(camera.up, moveVector).normalize();
-
-      let displacement = new THREE.Vector3();
-      displacement.addScaledVector(moveVector, velocity.z);
-      displacement.addScaledVector(rightVector, velocity.x);
-
-      // Check collisions before moving
-      let canMove = true;
-      const playerPos = controls.getObject().position.clone();
-      const nextPos = playerPos.clone().add(displacement);
-
-      // Simple collision: raycast from nextPos to objects, if too close prevent move
-      for (let obj of objects) {
-        if (obj === controls.getObject()) continue;
-        const box = new THREE.Box3().setFromObject(obj);
-        if (box.containsPoint(nextPos)) {
-          canMove = false;
-          break;
-        }
-      }
-
-      if (canMove) {
-        controls.getObject().position.add(displacement);
-      }
-
-      // Update bullets
-      for (let i = bullets.length - 1; i >= 0; i--) {
-        let b = bullets[i];
-        b.position.add(b.userData.velocity.clone().multiplyScalar(0.5));
-
-        // Check bullet collision with targets and walls
-        let hit = false;
-
-        // Remove bullet if out of range
-        if (b.position.length() > 100) {
-          scene.remove(b);
-          bullets.splice(i,1);
-          continue;
-        }
-
-        // Check targets
-        if (b.userData.owner === 'player') {
-          for (let j = targets.length-1; j >=0; j--) {
-            const target = targets[j];
-            if (target.mesh.position.distanceTo(b.position) < 1) {
-              target.health--;
-              if (target.health <= 0) {
-                scene.remove(target.mesh);
-                targets.splice(j,1);
-                objects.splice(objects.indexOf(target.mesh),1);
-              }
-              scene.remove(b);
-              bullets.splice(i,1);
-              hit = true;
-              break;
-            }
-          }
-        } else if (b.userData.owner === 'target') {
-          // Check player hit
-          if (b.position.distanceTo(controls.getObject().position) < 1) {
-            playerHealth--;
-            if (playerHealth <= 0) {
-              alert("You died! Reload to play again.");
-              controls.unlock();
-            }
-            scene.remove(b);
-            bullets.splice(i,1);
-            hit = true;
-          }
-        }
-
-        // Check wall collision (basic box collision)
-        for (let wall of objects) {
-          if (wall.geometry.type === 'BoxGeometry') {
-            const box = new THREE.Box3().setFromObject(wall);
-            if (box.containsPoint(b.position)) {
-              scene.remove(b);
-              bullets.splice(i,1);
-              hit = true;
-              break;
-            }
-          }
-        }
-
-        if (hit) continue;
-      }
-
-      // Targets shooting logic
-      for (let target of targets) {
-        target.shootCooldown--;
-        if (target.shootCooldown <= 0) {
-          // Check line of sight to player
-          let from = target.mesh.position.clone();
-          from.y += 1; // gun height approx
-          let to = controls.getObject().position.clone();
-          to.y += 1;
-
-          let direction = new THREE.Vector3().subVectors(to, from).normalize();
-          raycaster.set(from, direction);
-
-          // Check if wall blocks line of sight
-          let intersects = raycaster.intersectObjects(objects.filter(o => o !== target.mesh), true);
-
-          if (intersects.length > 0 && intersects[0].distance < from.distanceTo(to)) {
-            // Wall is blocking
-            continue;
-          }
-
-          // Shoot bullet at player
-          shootTargetBullet(target, direction);
-          target.shootCooldown = 120; // cooldown frames ~2 seconds
-        }
-      }
-    }
-
-    // Update player health display
-    document.getElementById('info').textContent = 
-      `Use WASD or arrow keys to move, click to shoot\nHealth: ${playerHealth}`;
-
+    cube.rotation.x += 0.01;
+    cube.rotation.y += 0.01;
     renderer.render(scene, camera);
   }
 
-  function shootTargetBullet(target, direction) {
-    const geometry = new THREE.SphereGeometry(0.05, 8, 8);
-    const material = new THREE.MeshBasicMaterial({color: 0xff0000});
-    const bullet = new THREE.Mesh(geometry, material);
-    bullet.position.copy(target.mesh.position);
-    bullet.position.y += 1;
-    bullet.userData = {
-      velocity: direction.clone().multiplyScalar(0.3),
-      owner: 'target'
-    };
-    scene.add(bullet);
-    bullets.push(bullet);
-  }
-
-  function onWindowResize() {
-    camera.aspect = window.innerWidth/window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  }
+  animate();
 </script>
 </body>
 </html>
